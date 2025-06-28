@@ -40,8 +40,19 @@
     <None Include="**/*.received.*" />
     <None Include="**/*.verified.*" />
   </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="TestCases\**\*.input.vb" />
+    <AdditionalFiles Include="TestCases\**\*.verified.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Remove="TestCases\CaseSensitivityTests.HandlesWithDifferingCaseTestAsync.input.vb" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\CommandLine\CodeConv.NetFramework\CodeConv.NetFramework.csproj" />
+
+    <ProjectReference Include="..\CodeConverter.TestGenerator\CodeConverter.TestGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <ItemGroup Label="ReSharper test runner requirements - test against latest Visual Studio version">
     <PackageReference Include="Microsoft.CodeAnalysis.Features" Version="4.1.0" />
