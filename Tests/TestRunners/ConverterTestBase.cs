@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -12,6 +12,8 @@ using Microsoft.CodeAnalysis.VisualBasic;
 using Xunit;
 using Xunit.Sdk;
 using System.Globalization;
+using System.IO;
+using Microsoft.CodeAnalysis.CSharp;
 
 namespace ICSharpCode.CodeConverter.Tests.TestRunners;
 
@@ -42,16 +44,76 @@ public class ConverterTestBase
         };
         VisualBasic11 = new TextConversionOptions(References) {
             RootNamespaceOverride = string.Empty,
-            TargetCompilationOptionsOverride = options.WithParseOptions(new VisualBasicParseOptions(LanguageVersion.VisualBasic11)),
+            TargetCompilationOptionsOverride = options.WithParseOptions(new VisualBasicParseOptions(Microsoft.CodeAnalysis.VisualBasic.LanguageVersion.VisualBasic11)),
             ShowCompilationErrors = true
         };
     }
 
     private static IReadOnlyCollection<PortableExecutableReference> References { get; } = DefaultReferences.With(
-        typeof(System.Windows.Forms.Form).Assembly,
-        typeof(Microsoft.VisualBasic.Devices.Computer).Assembly,
-        typeof(System.Data.SqlClient.SqlConnection).Assembly
-    );
+        typeof(System.Data.SqlClient.SqlConnection).Assembly,
+        typeof(System.Drawing.Point).Assembly
+    ).Concat(new[] {
+        CreateMockReference(@"
+namespace System.Windows.Forms
+{
+    public class Control
+    {
+        public System.Drawing.Point Location { get; set; }
+        public string Name { get; set; }
+        public System.Drawing.Size Size { get; set; }
+        public int TabIndex { get; set; }
+        public string Text { get; set; }
+        public event EventHandler Click;
+    }
+    public class Button : Control
+    {
+        public bool UseVisualStyleBackColor { get; set; }
+    }
+    public class Form : Control
+    {
+        public event EventHandler Load;
+    }
+    public class Application
+    {
+        public static void SetCompatibleTextRenderingDefault(bool defaultValue) { }
+    }
+}
+namespace Microsoft.VisualBasic.Devices
+{
+    public class Computer
+    {
+    }
+}
+")
+    }).ToArray();
+
+    private static PortableExecutableReference CreateMockReference(string code)
+    {
+        var tree = CSharpSyntaxTree.ParseText(code);
+        var references = DefaultReferences.NetStandard2.Concat(new[] {
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(System.Drawing.Point).Assembly.Location)
+        });
+        var compilation = CSharpCompilation.Create(
+            "MockAssembly_" + Guid.NewGuid(),
+            new[] { tree },
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        using (var ms = new MemoryStream())
+        {
+            var result = compilation.Emit(ms);
+            if (!result.Success)
+            {
+                var failures = result.Diagnostics.Where(diagnostic =>
+                    diagnostic.IsWarningAsError ||
+                    diagnostic.Severity == DiagnosticSeverity.Error);
+                throw new Exception("Mock assembly compilation failed: " + string.Join(Environment.NewLine, failures.Select(d => d.GetMessage())));
+            }
+            ms.Seek(0, SeekOrigin.Begin);
+            return MetadataReference.CreateFromStream(ms);
+        }
+    }
 
     public async Task TestConversionCSharpToVisualBasicAsync(string csharpCode, string expectedVisualBasicCode, bool expectSurroundingMethodBlock = false, bool expectCompilationErrors = false, TextConversionOptions conversionOptions = null, bool hasLineCommentConversionIssue = false)
     {
@@ -112,12 +174,12 @@ End Sub";
     /// </summary>
     public async Task TestConversionVisualBasicToCSharpAsync(string visualBasicCode, string expectedCsharpCode,
         bool expectSurroundingBlock = false, bool missingSemanticInfo = false,
-        bool incompatibleWithAutomatedCommentTesting = false)
+        bool incompatibleWithAutomatedCommentTesting = false, bool expectCompilationErrors = false)
     {
         if (expectSurroundingBlock) expectedCsharpCode = SurroundWithBlock(expectedCsharpCode);
         var conversionOptions = new TextConversionOptions(References) {
             RootNamespaceOverride = _rootNamespace,
-            ShowCompilationErrors = !expectSurroundingBlock
+            ShowCompilationErrors = !expectSurroundingBlock || expectCompilationErrors
         };
 
         await AssertConvertedCodeResultEqualsAsync<VBToCSConversion>(visualBasicCode,
