@@ -35,34 +35,7 @@ jobs:
     - name: Create global.json to enforce .NET 8 for MSBuild and update Tests/TestData projects
       if: inputs.dotnet-version == '8.0.x'
       shell: pwsh
-      run: |
-        # ensure .NET 8 SDK is used for MSBuild operations
-        '{"sdk":{"version":"8.0.0","rollForward":"latestFeature"}}' | Out-File -FilePath global.json -Encoding utf8
-        Write-Host "Updating <TargetFramework>net10.0...</TargetFramework> entries to net8.0 under Tests/TestData"
-
-        # Replace net10.0 and net10.0-windows with net8.0 / net8.0-windows respectively
-        $projFiles = Get-ChildItem -Path Tests/TestData -Recurse -Include *.csproj,*.vbproj,*.fsproj -ErrorAction SilentlyContinue
-        foreach ($f in $projFiles) {
-          $path = $f.FullName
-          $content = Get-Content -Path $path -Raw -ErrorAction Stop
-          $updated = $content -replace '<TargetFramework>net10.0(-windows)?</TargetFramework>', '<TargetFramework>net8.0$1</TargetFramework>'
-          if ($updated -ne $content) {
-            Write-Host "Updating: $path"
-            $updated | Set-Content -Path $path -Encoding utf8
-          }
-        }
-
-        # If any files were changed, commit them so the working tree is clean for subsequent test steps.
-        $status = git status --porcelain
-        if ($status) {
-          git config user.name "github-actions[bot]"
-          git config user.email "${{ github.actor }}@users.noreply.github.com"
-          git add -A
-          git commit -m "CI: Update Tests/TestData TargetFramework -> net8.0 for .NET 8 run" || Write-Host "git commit returned non-zero (possibly no staged changes)"
-          Write-Host "Committed changes to local repo (not pushed)."
-        } else {
-          Write-Host "No project files needed updating."
-        }
+      run: ./.github/scripts/update-testdata-targetframework.ps1
 
     - name: Log MSBuild version
       run: msbuild -version
